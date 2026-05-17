@@ -103,6 +103,28 @@ function areJsonSnapshotsEqual(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+/**
+ * 自定义 CSS 主题相关字段不并入「保存所有设置」流程：每个动作由
+ * `useCustomThemes` controller 立即调用 `useUpdateSettings.mutateAsync`
+ * 单独写入（Requirement 9.3 / 12.1）。把它们从草稿快照里剥离，避免：
+ *   1) 切换 Master_Switch / 编辑主题让底部保存条变 dirty；
+ *   2) 用户点击「保存所有设置」时把表单里 stale 的三字段值覆盖掉
+ *      `useCustomThemes` 在另一处刚刚写入的最新状态。
+ *
+ * 三字段最终随 `mutateAsync` 内部的 `normalizeSettings({ ...current, ...patch })`
+ * 从 React Query 缓存的 `current` 中保留下来，无需在这里再回填。
+ */
+function stripCustomThemeFields(value: AppSettings): Omit<
+  AppSettings,
+  "customThemes" | "activeCustomThemeId" | "customThemesEnabled"
+> {
+  const { customThemes: _ct, activeCustomThemeId: _ai, customThemesEnabled: _en, ...rest } = value;
+  void _ct;
+  void _ai;
+  void _en;
+  return rest;
+}
+
 function createDraftSettingsFromRemote(remoteSettings: AppSettings, themeMode: ThemeMode): AppSettings {
   if (!readAppearancePendingFromStorage()) return remoteSettings;
   const storedVariant = readThemeVariantFromStorage();
@@ -219,7 +241,7 @@ export function useSettingsFormController(): SettingsFormController {
   );
 
   const settingsDirty = useMemo(
-    () => !areJsonSnapshotsEqual(settings, savedSettings),
+    () => !areJsonSnapshotsEqual(stripCustomThemeFields(settings), stripCustomThemeFields(savedSettings)),
     [settings, savedSettings],
   );
   const customConfigDirty = useMemo(
@@ -395,7 +417,7 @@ export function useSettingsFormController(): SettingsFormController {
 
     try {
       const settingsPromise: Promise<AppSettings | null> = shouldSaveSettings
-        ? updateSettings.mutateAsync(settings)
+        ? updateSettings.mutateAsync(stripCustomThemeFields(settings))
         : Promise.resolve(null);
       const customConfigPromise: Promise<CustomConfig | null> = shouldSaveCustomConfig
         ? saveConfig(customConfig)

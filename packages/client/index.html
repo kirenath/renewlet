@@ -44,6 +44,50 @@
           /* ignore */
         }
       })();
+
+      // 自定义 CSS 主题首屏注入（Requirements 7.8, 8.8, 8.11）
+      // 同步阻塞执行，保证 React 挂载前 <head> 内已有 <style data-renewlet-custom-theme>。
+      // 不读 React、不读 PocketBase、不发起任何 fetch。
+      (function () {
+        try {
+          // (Req 7.8) URL 旁路 ?disableCustomCss=1：本会话强制不注入，且不修改持久化值
+          var search = window.location.search || "";
+          if (/(^|[?&])disableCustomCss=1(&|$)/.test(search)) return;
+
+          // (Req 8.3) 总闸：只有严格等于 '0' 才视为禁用；其它（缺失 / 空 / '1' / 任何字符串）一律启用
+          var enabledRaw = localStorage.getItem("renewlet_custom_themes_enabled");
+          if (enabledRaw === "0") return;
+
+          // (Req 8.2) 激活 CSS 文本：空串 / 缺失视为“无缓存 CSS”
+          var css = localStorage.getItem("renewlet_active_custom_theme_css");
+          if (!css) return;
+
+          // (Req 8.11) 损坏检测：保守地用 string.length 近似 UTF-8 字节长度
+          // CSS_Size_Limit = 102400 字节，2× 上限 = 204800；命中则同步清掉两个 key 后退出
+          if (css.length > 204800) {
+            try {
+              localStorage.removeItem("renewlet_active_custom_theme_css");
+            } catch (_e1) {
+              /* ignore */
+            }
+            try {
+              localStorage.removeItem("renewlet_active_custom_theme_id");
+            } catch (_e2) {
+              /* ignore */
+            }
+            return;
+          }
+
+          // (Req 6.2 / 8.8) 创建唯一 <style data-renewlet-custom-theme>，挂到 <head> 末尾
+          // React 挂载后 CustomCssInjector 会按 [data-renewlet-custom-theme] 复用此节点
+          var style = document.createElement("style");
+          style.setAttribute("data-renewlet-custom-theme", "");
+          style.textContent = css;
+          document.head.appendChild(style);
+        } catch (_e) {
+          /* ignore */
+        }
+      })();
     </script>
   </head>
   <body>

@@ -8,7 +8,13 @@
  * Caveat: 这里的字段必须与 `DEFAULT_SETTINGS` 保持同步；新增设置时若只改 UI，会在保存时被丢弃。
  */
 import { z } from "zod";
-import { NOTIFICATION_CHANNELS, type AppSettings } from "@/types/subscription";
+import {
+  CSS_SIZE_LIMIT,
+  NOTIFICATION_CHANNELS,
+  THEME_COUNT_LIMIT,
+  THEME_NAME_LIMIT,
+  type AppSettings,
+} from "@/types/subscription";
 import { exchangeRateProviderSchema } from "@/lib/api/schemas/exchange-rates";
 import { THEME_MODES, THEME_VARIANTS } from "@/types/theme";
 import { SUPPORTED_LOCALES } from "@/i18n/locales";
@@ -18,7 +24,7 @@ import { isValidTimeZone } from "@/lib/time/time-zone";
 // 通知调度按“用户本地墙上时间”执行，因此保存 HH:mm 而不是 UTC instant。
 const hhmmSchema = z.string().refine(isValidLocalTime, "时间格式必须为 HH:mm").transform((value) => value as LocalTime);
 
-// 通知 Webhook 只允许 HTTPS，避免设置页成为明文凭据外泄入口。
+// 通知 Webhook 只允许 HTTPS,避免设置页成为明文凭据外泄入口。
 const optionalHttpsUrlSchema = z
   .string()
   .trim()
@@ -51,14 +57,54 @@ const optionalSmtpPortSchema = z
 // 使用 IANA timezone 而不是固定 offset；DST/地区政策变化由 Intl 负责解释。
 const timezoneSchema = z.string().trim().min(1).max(80).refine(isValidTimeZone, "时区无效");
 
+// ISO 8601 UTC 字符串（结尾必须为 `Z`），用于自定义主题的时间戳字段。
+const isoUtcDateTimeSchema = z
+  .string()
+  .refine(
+    (value) => /T.*Z$/.test(value) && !Number.isNaN(Date.parse(value)),
+    "时间必须为 ISO 8601 UTC 字符串（以 Z 结尾）",
+  );
+
 /**
- * 用户设置（保存到 `public.user_settings.settings`）。
+ * 单条自定义 CSS 主题 Zod 契约。
  *
- * 说明：
- * - 后端会将该对象作为 JSONB 直接存储，便于后续灵活扩展
- * - PUT 支持部分字段更新，服务端会与默认值合并
+ * 字段约束：
+ * - `id`：非空字符串（≤ 64），客户端用 RFC 4122 v4 UUID 生成。
+ * - `name`：长度 [1, THEME_NAME_LIMIT]，存储前已 trim()。
+ * - `css`：先以字符长度粗筛（≤ CSS_SIZE_LIMIT * 4）防御对大字符串跑 TextEncoder 的攻击，
+ *   再以 UTF-8 编码精确校验 ≤ CSS_SIZE_LIMIT 字节。
+ * - `createdAt` / `updatedAt`：ISO 8601 UTC（结尾 `Z`）字符串。
+ *
+ * 不做任何消毒；自定义 CSS 视为与登录使用者同等可信（参见 Requirement 13）。
  */
-export const appSettingsSchema = z
+export const customCssThemeSchema = z
+  .object({
+    id: z.string().min(1).max(64).describe("自定义主题 id（UUID）。"),
+    name: z.string().min(1).max(THEME_NAME_LIMIT).describe("显示名称。"),
+    css: z
+      .string()
+      .max(CSS_SIZE_LIMIT * 4, `CSS 字符长度过大`)
+      .refine(
+        (value) => new TextEncoder().encode(value).length <= CSS_SIZE_LIMIT,
+        `CSS 字节长度不得超过 ${CSS_SIZE_LIMIT}`,
+      )
+      .describe("原始 CSS 文本。"),
+    createdAt: isoUtcDateTimeSchema.describe("创建时间（ISO 8601 UTC）。"),
+    updatedAt: isoUtcDateTimeSchema.describe("最后修改时间（ISO 8601 UTC）。"),
+  })
+  .strict();
+
+/**
+ * 用户设置基础对象（不含 superRefine）。
+ *
+ * 单独提取以便同时构建：
+ * - `appSettingsSchema`：完整对象 + 引用完整性 superRefine。
+ * - `settingsUpdateBodySchema`：partial 后再追加宽容版 superRefine（任一字段缺失则跳过）。
+ *
+ * Caveat: zod 4 中 `.partial()` 不允许作用在已带 refinements 的 schema 上，
+ * 所以两条路径必须共享同一个未 refine 的基础对象。
+ */
+const appSettingsBaseObject = z
   .object({
     adminUsername: z.string().trim().min(1).max(80).describe("管理员用户名。"),
 
@@ -128,13 +174,64 @@ export const appSettingsSchema = z
     barkServerUrl: optionalHttpsUrlSchema.describe("Bark 服务器地址。"),
     barkDeviceKey: z.string().trim().max(256).describe("Bark 设备 Key。"),
     barkSilentPush: z.boolean().describe("Bark 是否静音推送。"),
+
+    customThemes: z
+      .array(customCssThemeSchema)
+      .max(THEME_COUNT_LIMIT, `自定义主题数量不得超过 ${THEME_COUNT_LIMIT}`)
+      .describe("自定义 CSS 主题集合。"),
+    activeCustomThemeId: z
+      .string()
+      .min(1)
+      .max(64)
+      .nullable()
+      .describe("当前激活自定义主题 id；null 表示未激活。"),
+    customThemesEnabled: z.boolean().describe("自定义 CSS 总闸；false 时即使有激活主题也不注入。"),
   })
-  .strict() satisfies z.ZodType<AppSettings>;
+  .strict();
+
+/**
+ * 用户设置（保存到 `public.user_settings.settings`）。
+ *
+ * 说明：
+ * - 后端会将该对象作为 JSONB 直接存储，便于后续灵活扩展
+ * - PUT 支持部分字段更新，服务端会与默认值合并
+ * - `superRefine`：当 `activeCustomThemeId !== null` 时，必须引用 `customThemes` 中已存在的主题 id。
+ */
+export const appSettingsSchema = appSettingsBaseObject.superRefine((value, ctx) => {
+  if (value.activeCustomThemeId == null) return;
+  const ids = new Set(value.customThemes.map((theme) => theme.id));
+  if (!ids.has(value.activeCustomThemeId)) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["activeCustomThemeId"],
+      message: "activeCustomThemeId 必须引用 customThemes 中已存在的主题 id",
+    });
+  }
+}) satisfies z.ZodType<AppSettings>;
 
 /** 设置读取响应结构。 */
 export const settingsResponseSchema = z.object({
   settings: appSettingsSchema.describe("用户设置对象。"),
 }).strict();
 
-/** 设置更新请求体：支持部分字段更新。 */
-export const settingsUpdateBodySchema = appSettingsSchema.partial().describe("支持部分字段更新。");
+/**
+ * 设置更新请求体：支持部分字段更新。
+ *
+ * `superRefine`：仅在 `customThemes` 与 `activeCustomThemeId` 两者都被显式提供时
+ * 才做引用完整性校验，避免误拒只改其中一个字段的合法 PATCH。
+ */
+export const settingsUpdateBodySchema = appSettingsBaseObject
+  .partial()
+  .superRefine((value, ctx) => {
+    if (value.activeCustomThemeId === undefined || value.customThemes === undefined) return;
+    if (value.activeCustomThemeId === null) return;
+    const ids = new Set(value.customThemes.map((theme) => theme.id));
+    if (!ids.has(value.activeCustomThemeId)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["activeCustomThemeId"],
+        message: "activeCustomThemeId 必须引用 customThemes 中已存在的主题 id",
+      });
+    }
+  })
+  .describe("支持部分字段更新。");

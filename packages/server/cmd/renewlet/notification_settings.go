@@ -92,6 +92,29 @@ func sanitizeSettings(settings appSettings) appSettings {
 	if strings.TrimSpace(settings.BarkServerURL) == "" {
 		settings.BarkServerURL = "https://api.day.app"
 	}
+	// Custom CSS Themes 兜底：保证 CustomThemes 非 nil（避免 JSON null），并修正悬空激活指针。
+	if settings.CustomThemes == nil {
+		settings.CustomThemes = []customCSSTheme{}
+	}
+	if settings.ActiveCustomThemeID != nil {
+		active := strings.TrimSpace(*settings.ActiveCustomThemeID)
+		if active == "" {
+			settings.ActiveCustomThemeID = nil
+		} else {
+			found := false
+			for i := range settings.CustomThemes {
+				if settings.CustomThemes[i].ID == active {
+					found = true
+					break
+				}
+			}
+			if !found {
+				settings.ActiveCustomThemeID = nil
+			} else {
+				settings.ActiveCustomThemeID = &active
+			}
+		}
+	}
 	return settings
 }
 

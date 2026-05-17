@@ -152,6 +152,35 @@ export interface SubscriptionStats {
   trialEndingSoon: number;
 }
 
+/**
+ * 自定义 CSS 主题记录。
+ *
+ * 来源：自定义 CSS 主题特性（custom-css-themes spec）。一条主题等价于一段用户保存的 CSS 文本，
+ * 由客户端注入到 `<head>` 内的 `<style data-renewlet-custom-theme>` 标签生效。
+ *
+ * 字段约束（Settings_Schema 与 domain 层会进一步收紧）：
+ * - `id`：非空字符串（生成时使用 RFC 4122 v4 UUID）。
+ * - `name`：trim 后长度在 [1, THEME_NAME_LIMIT] 之间。
+ * - `css`：UTF-8 编码后字节长度不超过 CSS_SIZE_LIMIT；不做任何消毒。
+ * - `createdAt` / `updatedAt`：ISO 8601 UTC 时间字符串（结尾 `Z`）。
+ */
+export interface CustomCssTheme {
+  id: string;
+  name: string;
+  css: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/** 单条主题 `css` 字段的最大字节长度（UTF-8 编码后），即 100 KiB。 */
+export const CSS_SIZE_LIMIT = 102_400;
+/** Custom_Theme_Collection 中主题条目的最大数量。 */
+export const THEME_COUNT_LIMIT = 20;
+/** 单条主题 `name` 字段在 trim() 后的最大长度。 */
+export const THEME_NAME_LIMIT = 80;
+/** 主题导出 / 导入 JSON 文档的协议版本号。 */
+export const THEME_EXPORT_VERSION = 1;
+
 export interface AppSettings {
   // Admin
   /** 管理员用户名（用于界面展示/未来扩展）。 */
@@ -248,6 +277,14 @@ export interface AppSettings {
   barkDeviceKey: string;
   /** Bark 是否静音推送。 */
   barkSilentPush: boolean;
+
+  // Custom CSS Themes
+  /** 用户保存的自定义 CSS 主题列表。数量上限由 THEME_COUNT_LIMIT 控制。 */
+  customThemes: CustomCssTheme[];
+  /** 当前激活的主题 id，必须等于 customThemes 中某条记录的 id；为 null 表示未激活任何自定义主题。 */
+  activeCustomThemeId: string | null;
+  /** 自定义 CSS 主题的全局总闸；为 false 时即使 activeCustomThemeId 非空也不注入。 */
+  customThemesEnabled: boolean;
 }
 
 export const CATEGORY_LABELS: Record<BuiltInCategory, LocalizedLabels> = {
@@ -446,4 +483,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   barkServerUrl: 'https://api.day.app',
   barkDeviceKey: '',
   barkSilentPush: false,
+  customThemes: [],
+  activeCustomThemeId: null,
+  customThemesEnabled: true,
 };

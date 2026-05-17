@@ -18,6 +18,7 @@ import { Toaster as Sonner } from "@/components/ui/sonner";
 import { CustomConfigProvider } from "@/contexts/CustomConfigContext";
 import { AuthSync } from "@/components/auth-sync";
 import { AppearanceSync } from "@/components/appearance-sync";
+import CustomCssInjector from "@/components/custom-css-injector";
 import { I18nProvider } from "@/i18n/I18nProvider";
 
 /** 应用级 Provider 组合（请将所有页面都包在里面）。 */
@@ -34,6 +35,7 @@ export default function Providers({ children }: { children: React.ReactNode }) {
         </Suspense>
         <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
           <AppearanceSync />
+          <CustomCssInjector />
           <CustomConfigProvider>
             <TooltipProvider>
               <Sonner />

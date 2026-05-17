@@ -46,8 +46,18 @@ export function normalizeSettings(value: unknown): AppSettings {
     Object.entries(parsed.data).filter(([, item]) => item !== undefined),
   ) as Partial<AppSettings>;
   const settings: AppSettings = { ...defaults, ...patch };
+  // 自定义主题悬空指针修正：partial schema 的引用完整性校验仅在 customThemes
+  // 与 activeCustomThemeId 同时提供时生效（避免误拒 PATCH）。当 patch 只提供
+  // activeCustomThemeId、与默认空 customThemes 合并后会出现指向不存在主题的
+  // 悬空 id；这里收敛为 null，使输出始终通过完整 appSettingsSchema 校验。
+  const ids = new Set(settings.customThemes.map((theme) => theme.id));
+  const activeCustomThemeId =
+    settings.activeCustomThemeId !== null && !ids.has(settings.activeCustomThemeId)
+      ? null
+      : settings.activeCustomThemeId;
   return {
     ...settings,
+    activeCustomThemeId,
     webhookHeaders: clearLegacyWebhookExample(settings.webhookHeaders, WEBHOOK_HEADERS_PLACEHOLDER),
     webhookPayload: clearLegacyWebhookExample(settings.webhookPayload, WEBHOOK_PAYLOAD_PLACEHOLDER),
   };

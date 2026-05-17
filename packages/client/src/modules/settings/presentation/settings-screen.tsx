@@ -26,6 +26,7 @@ import { SearchableSelect } from '@/components/ui/searchable-select';
 import { TimePicker } from '@/components/ui/time-picker';
 import { ConfigManagerDialog } from '@/modules/custom-config/presentation/config-manager-dialog';
 import { ThemeSelector } from '@/components/theme-selector';
+import { CustomThemeSection } from './custom-theme-section';
 import { NotificationHistoryPanel } from './notification-history-panel';
 import { Settings2, FolderKanban, Activity, CreditCard, Coins, Palette } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -218,6 +219,13 @@ export function SettingsScreen() {
               onCustomColorChange={handleThemeCustomColorChange}
             />
           </section>
+
+          {/* 自定义 CSS 主题 ───────────────────────────────────────────────
+              该 section 内部通过 `useCustomThemes()` 自管草稿与持久化（每个动作
+              都会立即调用 `useUpdateSettings.mutateAsync`），因此**不**接入
+              `useSettingsFormController` 的 saved/draft 比对，也不会让底部
+              「保存所有设置」保存条变 dirty（Req 9.3 / 12.1）。 */}
+          <CustomThemeSection />
 
           {/* 显示设置 */}
             <section className="rounded-xl border border-border bg-card p-6">

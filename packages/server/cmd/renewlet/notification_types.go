@@ -76,12 +76,28 @@ type appSettings struct {
 	BarkServerURL           string           `json:"barkServerUrl"`
 	BarkDeviceKey           string           `json:"barkDeviceKey"`
 	BarkSilentPush          bool             `json:"barkSilentPush"`
+	// Custom CSS Themes —— 与前端 AppSettings 同步（custom-css-themes spec）。
+	// CustomThemes 至多 20 条；ActiveCustomThemeID 必须命中其一或为空字符串/null；
+	// 后端不消毒 CSS（部署形态预设单租户，详见 Requirement 13）。
+	CustomThemes         []customCSSTheme `json:"customThemes"`
+	ActiveCustomThemeID  *string          `json:"activeCustomThemeId"`
+	CustomThemesEnabled  bool             `json:"customThemesEnabled"`
 }
 
 type themeCustomColor struct {
 	H float64 `json:"h"`
 	S float64 `json:"s"`
 	L float64 `json:"l"`
+}
+
+// customCSSTheme 是 settings.customThemes 数组的元素，与前端 CustomCssTheme 同步。
+// 字段顺序与前端契约一致；ID 由前端 crypto.randomUUID() 生成，后端原样存储。
+type customCSSTheme struct {
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	CSS       string `json:"css"`
+	CreatedAt string `json:"createdAt"`
+	UpdatedAt string `json:"updatedAt"`
 }
 
 // notificationSubscription 是通知计算所需的订阅投影。
@@ -360,5 +376,9 @@ func defaultAppSettings() appSettings {
 		WebhookMethod:         "POST",
 		WechatMessageType:     "text",
 		BarkServerURL:         "https://api.day.app",
+		// Custom CSS Themes 默认值与前端 DEFAULT_SETTINGS 同步。
+		CustomThemes:        []customCSSTheme{},
+		ActiveCustomThemeID: nil,
+		CustomThemesEnabled: true,
 	}
 }

@@ -29,6 +29,13 @@ vi.mock("@/components/theme-selector", () => ({
   ThemeSelector: () => null,
 }));
 
+// CustomThemeSection 内部直接调用 useQueryClient / useSettings；这些测试只关心
+// SettingsScreen 自己的布局与传参，与自定义 CSS 主题区块无关，因此 mock 掉以避免
+// 强制构造 QueryClientProvider 测试环境。
+vi.mock("./custom-theme-section", () => ({
+  CustomThemeSection: () => <div data-testid="custom-theme-section" />,
+}));
+
 vi.mock("@/components/ui/searchable-select", () => ({
   SearchableSelect: ({ value }: { value: string }) => <div data-testid="searchable-select">{value}</div>,
 }));
